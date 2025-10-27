@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LendTrack - Personal Lending Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+</head>
+<body>
+    <!-- App Container -->
+    <div id="app" class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="app-title">LendTrack</h1>
+                <button class="icon-btn" id="themeToggle" aria-label="Toggle theme">
+                    <span class="material-icons">brightness_6</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- Dashboard View -->
+            <section id="dashboardView" class="view active">
+                <div class="summary-cards">
+                    <div class="summary-card" style="background: var(--color-bg-1);">
+                        <div class="summary-icon">
+                            <span class="material-icons">arrow_upward</span>
+                        </div>
+                        <div class="summary-content">
+                            <p class="summary-label">Total Lent</p>
+                            <h2 class="summary-value" id="totalLent">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="summary-card" style="background: var(--color-bg-4);">
+                        <div class="summary-icon">
+                            <span class="material-icons">arrow_downward</span>
+                        </div>
+                        <div class="summary-content">
+                            <p class="summary-label">Total Borrowed</p>
+                            <h2 class="summary-value" id="totalBorrowed">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="summary-card" style="background: var(--color-bg-3);">
+                        <div class="summary-icon">
+                            <span class="material-icons">trending_up</span>
+                        </div>
+                        <div class="summary-content">
+                            <p class="summary-label">Expected Returns</p>
+                            <h2 class="summary-value" id="expectedReturns">₹0</h2>
+                        </div>
+                    </div>
+                    <div class="summary-card" style="background: var(--color-bg-2);">
+                        <div class="summary-icon">
+                            <span class="material-icons">receipt_long</span>
+                        </div>
+                        <div class="summary-content">
+                            <p class="summary-label">Active Loans</p>
+                            <h2 class="summary-value" id="activeLoans">0</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quick-actions">
+                    <h3 class="section-title">Quick Actions</h3>
+                    <div class="action-buttons">
+                        <button class="action-btn btn--primary" onclick="showLoanModal('lent')">
+                            <span class="material-icons">add_circle</span>
+                            Lend Money
+                        </button>
+                        <button class="action-btn btn--secondary" onclick="showLoanModal('borrowed')">
+                            <span class="material-icons">remove_circle</span>
+                            Borrow Money
+                        </button>
+                    </div>
+                </div>
+
+                <div class="recent-loans">
+                    <h3 class="section-title">Recent Loans</h3>
+                    <div id="recentLoansList" class="loans-list"></div>
+                </div>
+            </section>
+
+            <!-- Loans View -->
+            <section id="loansView" class="view">
+                <div class="view-header">
+                    <h2 class="view-title">All Loans</h2>
+                    <div class="search-filter">
+                        <div class="search-box">
+                            <span class="material-icons">search</span>
+                            <input type="text" id="searchInput" placeholder="Search by name...">
+                        </div>
+                        <select id="filterType" class="filter-select">
+                            <option value="all">All Loans</option>
+                            <option value="lent">Lent Only</option>
+                            <option value="borrowed">Borrowed Only</option>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="allLoansList" class="loans-list"></div>
+            </section>
+
+            <!-- Statistics View -->
+            <section id="statsView" class="view">
+                <h2 class="view-title">Statistics</h2>
+                <div class="stats-container">
+                    <div class="card">
+                        <h3 class="card-title">Lending Overview</h3>
+                        <div class="chart-container">
+                            <canvas id="lendingChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">Interest Earned vs Paid</h3>
+                        <div class="chart-container">
+                            <canvas id="interestChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <p class="stat-label">Total Interest Earned</p>
+                            <p class="stat-value" id="totalInterestEarned">₹0</p>
+                        </div>
+                        <div class="stat-item">
+                            <p class="stat-label">Total Interest Paid</p>
+                            <p class="stat-value" id="totalInterestPaid">₹0</p>
+                        </div>
+                        <div class="stat-item">
+                            <p class="stat-label">Completed Loans</p>
+                            <p class="stat-value" id="completedLoans">0</p>
+                        </div>
+                        <div class="stat-item">
+                            <p class="stat-label">Average Loan Amount</p>
+                            <p class="stat-value" id="avgLoanAmount">₹0</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings View -->
+            <section id="settingsView" class="view">
+                <h2 class="view-title">Settings</h2>
+                <div class="settings-container">
+                    <div class="card">
+                        <h3 class="card-title">Data Management</h3>
+                        <div class="settings-group">
+                            <button class="btn btn--primary" onclick="exportData()">
+                                <span class="material-icons">download</span>
+                                Export Data (CSV)
+                            </button>
+                            <button class="btn btn--secondary" onclick="document.getElementById('importFile').click()">
+                                <span class="material-icons">upload</span>
+                                Import Data
+                            </button>
+                            <input type="file" id="importFile" accept=".json" style="display: none;" onchange="importData(event)">
+                            <button class="btn btn--outline" onclick="clearAllData()">
+                                <span class="material-icons">delete_forever</span>
+                                Clear All Data
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title">About</h3>
+                        <p class="about-text">LendTrack - Personal Lending Manager v1.0</p>
+                        <p class="about-text">Track money lent to and borrowed from friends with simple and compound interest calculations.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+                <span class="material-icons">dashboard</span>
+                <span class="nav-label">Dashboard</span>
+            </button>
+            <button class="nav-item" data-view="loans" onclick="switchView('loans')">
+                <span class="material-icons">list</span>
+                <span class="nav-label">Loans</span>
+            </button>
+            <button class="nav-item" data-view="stats" onclick="switchView('stats')">
+                <span class="material-icons">bar_chart</span>
+                <span class="nav-label">Stats</span>
+            </button>
+            <button class="nav-item" data-view="settings" onclick="switchView('settings')">
+                <span class="material-icons">settings</span>
+                <span class="nav-label">Settings</span>
+            </button>
+        </nav>
+
+        <!-- FAB -->
+        <button class="fab" onclick="showLoanModal('lent')" aria-label="Add loan">
+            <span class="material-icons">add</span>
+        </button>
+    </div>
+
+    <!-- Loan Modal -->
+    <div id="loanModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Add Loan</h2>
+                <button class="icon-btn" onclick="closeLoanModal()">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <form id="loanForm" class="modal-body">
+                <input type="hidden" id="loanId">
+                <div class="form-group">
+                    <label class="form-label" for="personName">Person Name *</label>
+                    <input type="text" id="personName" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="contactInfo">Contact Info</label>
+                    <input type="text" id="contactInfo" class="form-control" placeholder="Phone or email">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="amount">Amount (₹) *</label>
+                    <input type="number" id="amount" class="form-control" min="1" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="loanType">Loan Type *</label>
+                    <select id="loanType" class="form-control" required>
+                        <option value="lent">Lent (You gave money)</option>
+                        <option value="borrowed">Borrowed (You received money)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="interestType">Interest Type *</label>
+                    <select id="interestType" class="form-control" onchange="updateInterestInfo()" required>
+                        <option value="simple">Simple Interest</option>
+                        <option value="compound">Compound Interest</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="interestRate">Interest Rate (% per annum) *</label>
+                    <input type="number" id="interestRate" class="form-control" min="0" step="0.1" value="10" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="startDate">Start Date *</label>
+                    <input type="date" id="startDate" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="durationMonths">Duration (months) *</label>
+                    <input type="number" id="durationMonths" class="form-control" min="1" step="1" value="12" required>
+                </div>
+                <div class="form-group" id="paymentFrequencyGroup">
+                    <label class="form-label" for="paymentFrequency">Payment Frequency *</label>
+                    <select id="paymentFrequency" class="form-control" required>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="annually">Annually</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="notes">Notes/Purpose</label>
+                    <textarea id="notes" class="form-control" rows="3" placeholder="Optional notes..."></textarea>
+                </div>
+                <div class="interest-preview" id="interestPreview">
+                    <h4>Calculation Preview</h4>
+                    <p id="previewText"></p>
+                </div>
+            </form>
+            <div class="modal-footer">
+                <button type="button" class="btn btn--secondary" onclick="closeLoanModal()">Cancel</button>
+                <button type="button" class="btn btn--primary" onclick="saveLoan()">Save Loan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loan Details Modal -->
+    <div id="loanDetailsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Loan Details</h2>
+                <button class="icon-btn" onclick="closeLoanDetailsModal()">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body" id="loanDetailsContent"></div>
+            <div class="modal-footer" id="loanDetailsActions"></div>
+        </div>
+    </div>
+
+    <!-- Payment Modal -->
+    <div id="paymentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Record Payment</h2>
+                <button class="icon-btn" onclick="closePaymentModal()">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="paymentLoanId">
+                <div class="form-group">
+                    <label class="form-label" for="paymentAmount">Payment Amount (₹) *</label>
+                    <input type="number" id="paymentAmount" class="form-control" min="1" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="paymentDate">Payment Date *</label>
+                    <input type="date" id="paymentDate" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="paymentNotes">Notes</label>
+                    <input type="text" id="paymentNotes" class="form-control" placeholder="Optional notes">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn--secondary" onclick="closePaymentModal()">Cancel</button>
+                <button type="button" class="btn btn--primary" onclick="savePayment()">Record Payment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
