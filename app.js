@@ -5,16 +5,33 @@ let loans = [];
 let currentView = 'dashboard';
 let currentTheme = 'light';
 let editingLoanId = null;
+let todayDate = new Date();
 
 // Initialize app
 function initApp() {
+    todayDate = new Date();
     loadFromStorage();
     applyTheme();
+    setCurrentDate();
     updateDashboard();
+    renderPerPersonSummary();
     renderRecentLoans();
     renderAllLoans();
     setTodayDate();
     setupEventListeners();
+}
+
+// Set current date display
+function setCurrentDate() {
+    const dateElement = document.getElementById('currentDate');
+    if (dateElement) {
+        dateElement.textContent = todayDate.toLocaleDateString('en-IN', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+    }
 }
 
 // In-Memory Storage Management
@@ -39,13 +56,21 @@ function getSampleData() {
             amount: 50000,
             type: 'lent',
             interestType: 'compound',
+            compoundFrequency: 'monthly',
             interestRate: 12,
             startDate: '2024-01-15',
             durationMonths: 24,
             paymentFrequency: 'monthly',
             notes: 'Business loan',
             status: 'active',
-            paymentsMade: [],
+            paymentsMade: [
+                {
+                    amount: 10000,
+                    date: '2024-07-15',
+                    notes: 'First payment',
+                    timestamp: new Date('2024-07-15').toISOString()
+                }
+            ],
             createdAt: new Date('2024-01-15').toISOString()
         },
         {
@@ -55,6 +80,7 @@ function getSampleData() {
             amount: 25000,
             type: 'borrowed',
             interestType: 'simple',
+            compoundFrequency: 'monthly',
             interestRate: 8,
             startDate: '2024-03-01',
             durationMonths: 12,
@@ -94,25 +120,88 @@ function setTodayDate() {
 }
 
 // Interest Calculations
+function getDaysElapsed(startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+}
+
 function calculateSimpleInterest(principal, rate, timeMonths) {
     const timeYears = timeMonths / 12;
     return (principal * rate * timeYears) / 100;
 }
 
+function calculateSimpleInterestByDays(principal, rate, days) {
+    const timeYears = days / 365;
+    return (principal * rate * timeYears) / 100;
+}
+
 function calculateCompoundInterest(principal, rate, timeMonths, frequency) {
     const timeYears = timeMonths / 12;
-    let n = 1; // Annual compounding by default
-    
-    if (frequency === 'monthly') {
-        n = 12;
-    } else if (frequency === 'quarterly') {
-        n = 4;
-    } else if (frequency === 'annually') {
-        n = 1;
-    }
-    
+    const n = getCompoundFrequencyValue(frequency);
     const amount = principal * Math.pow((1 + rate / (100 * n)), n * timeYears);
     return amount - principal;
+}
+
+function calculateCompoundInterestByDays(principal, rate, days, frequency) {
+    const timeYears = days / 365;
+    const n = getCompoundFrequencyValue(frequency);
+    const amount = principal * Math.pow((1 + rate / (100 * n)), n * timeYears);
+    return amount - principal;
+}
+
+function getCompoundFrequencyValue(frequency) {
+    switch(frequency) {
+        case 'daily': return 365;
+        case 'weekly': return 52;
+        case 'monthly': return 12;
+        case 'quarterly': return 4;
+        case 'annually': return 1;
+        default: return 12;
+    }
+}
+
+function getCompoundFrequencyName(frequency) {
+    switch(frequency) {
+        case 'daily': return 'Daily';
+        case 'weekly': return 'Weekly';
+        case 'monthly': return 'Monthly';
+        case 'quarterly': return 'Quarterly';
+        case 'annually': return 'Annually';
+        default: return 'Monthly';
+    }
+}
+
+// Calculate accrued interest from start date to a specific date
+function calculateAccruedInterest(loan, asOfDate) {
+    const daysElapsed = getDaysElapsed(loan.startDate, asOfDate);
+    let interest = 0;
+    
+    if (loan.interestType === 'simple') {
+        interest = calculateSimpleInterestByDays(loan.amount, loan.interestRate, daysElapsed);
+    } else {
+        const frequency = loan.compoundFrequency || 'monthly';
+        interest = calculateCompoundInterestByDays(loan.amount, loan.interestRate, daysElapsed, frequency);
+    }
+    
+    return interest;
+}
+
+// Calculate current outstanding amount with breakdown
+function calculateCurrentOutstanding(loan) {
+    const principal = loan.amount;
+    const accruedInterest = calculateAccruedInterest(loan, todayDate);
+    const totalPayments = loan.paymentsMade.reduce((sum, p) => sum + p.amount, 0);
+    const outstanding = principal + accruedInterest - totalPayments;
+    
+    return {
+        principal: principal,
+        interest: accruedInterest,
+        payments: totalPayments,
+        outstanding: Math.max(0, outstanding)
+    };
 }
 
 function calculateTotalAmount(loan) {
@@ -120,15 +209,85 @@ function calculateTotalAmount(loan) {
     if (loan.interestType === 'simple') {
         interest = calculateSimpleInterest(loan.amount, loan.interestRate, loan.durationMonths);
     } else {
-        interest = calculateCompoundInterest(loan.amount, loan.interestRate, loan.durationMonths, loan.paymentFrequency);
+        const frequency = loan.compoundFrequency || loan.paymentFrequency || 'monthly';
+        interest = calculateCompoundInterest(loan.amount, loan.interestRate, loan.durationMonths, frequency);
     }
     return loan.amount + interest;
 }
 
 function calculateRemainingAmount(loan) {
-    const totalAmount = calculateTotalAmount(loan);
-    const paidAmount = loan.paymentsMade.reduce((sum, payment) => sum + payment.amount, 0);
-    return totalAmount - paidAmount;
+    const breakdown = calculateCurrentOutstanding(loan);
+    return breakdown.outstanding;
+}
+
+// Get maturity date
+function getMaturityDate(loan) {
+    const start = new Date(loan.startDate);
+    const maturity = new Date(start);
+    maturity.setMonth(maturity.getMonth() + loan.durationMonths);
+    return maturity;
+}
+
+// Get days remaining until maturity
+function getDaysRemaining(loan) {
+    const maturityDate = getMaturityDate(loan);
+    const today = todayDate;
+    const diffTime = maturityDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+}
+
+// Get person summary
+function getPersonSummary(personName) {
+    const personLoans = loans.filter(l => l.personName === personName);
+    
+    const lentLoans = personLoans.filter(l => l.type === 'lent');
+    const borrowedLoans = personLoans.filter(l => l.type === 'borrowed');
+    
+    const totalLent = lentLoans.reduce((sum, l) => sum + l.amount, 0);
+    const totalBorrowed = borrowedLoans.reduce((sum, l) => sum + l.amount, 0);
+    
+    const outstandingLent = lentLoans.reduce((sum, loan) => {
+        if (loan.status === 'active') {
+            return sum + calculateCurrentOutstanding(loan).outstanding;
+        }
+        return sum;
+    }, 0);
+    
+    const outstandingBorrowed = borrowedLoans.reduce((sum, loan) => {
+        if (loan.status === 'active') {
+            return sum + calculateCurrentOutstanding(loan).outstanding;
+        }
+        return sum;
+    }, 0);
+    
+    const netOutstanding = outstandingLent - outstandingBorrowed;
+    let netPosition = 'settled';
+    if (netOutstanding > 0) {
+        netPosition = 'owes-you';
+    } else if (netOutstanding < 0) {
+        netPosition = 'you-owe';
+    }
+    
+    return {
+        name: personName,
+        totalLent: totalLent,
+        totalBorrowed: totalBorrowed,
+        outstandingLent: outstandingLent,
+        outstandingBorrowed: outstandingBorrowed,
+        netOutstanding: Math.abs(netOutstanding),
+        netPosition: netPosition,
+        loanCount: personLoans.length,
+        activeLoans: personLoans.filter(l => l.status === 'active').length,
+        loans: personLoans
+    };
+}
+
+// Get all unique persons
+function getAllPersons() {
+    const persons = new Set();
+    loans.forEach(loan => persons.add(loan.personName));
+    return Array.from(persons).map(name => getPersonSummary(name));
 }
 
 // Dashboard Updates
@@ -145,6 +304,137 @@ function updateDashboard() {
     document.getElementById('totalBorrowed').textContent = formatCurrency(totalBorrowed);
     document.getElementById('expectedReturns').textContent = formatCurrency(expectedReturns);
     document.getElementById('activeLoans').textContent = activeLoans.length;
+}
+
+// Render Per Person Summary
+function renderPerPersonSummary() {
+    const container = document.getElementById('perPersonList');
+    const persons = getAllPersons();
+    
+    if (persons.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: var(--color-text-secondary); padding: 20px;">No loans yet</p>';
+        return;
+    }
+    
+    container.innerHTML = persons.map(person => `
+        <div class="person-summary-card" onclick="switchView('people')">
+            <div class="person-summary-header">
+                <div class="person-summary-name">
+                    <div class="person-summary-avatar">${getInitials(person.name)}</div>
+                    <div class="person-summary-info">
+                        <h3>${person.name}</h3>
+                        <p>${person.activeLoans} active loan${person.activeLoans !== 1 ? 's' : ''}</p>
+                    </div>
+                </div>
+                <span class="person-net-position ${person.netPosition}">
+                    ${person.netPosition === 'owes-you' ? 'Owes You' : person.netPosition === 'you-owe' ? 'You Owe' : 'Settled'}
+                </span>
+            </div>
+            <div class="person-summary-body">
+                ${person.outstandingLent > 0 ? `
+                    <div class="person-summary-stat">
+                        <div class="person-summary-stat-label">They Owe</div>
+                        <div class="person-summary-stat-value" style="color: var(--color-success);">${formatCurrency(person.outstandingLent)}</div>
+                    </div>
+                ` : ''}
+                ${person.outstandingBorrowed > 0 ? `
+                    <div class="person-summary-stat">
+                        <div class="person-summary-stat-label">You Owe</div>
+                        <div class="person-summary-stat-value" style="color: var(--color-error);">${formatCurrency(person.outstandingBorrowed)}</div>
+                    </div>
+                ` : ''}
+                <div class="person-summary-stat">
+                    <div class="person-summary-stat-label">Net Outstanding</div>
+                    <div class="person-summary-stat-value">${formatCurrency(person.netOutstanding)}</div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Render People View
+function renderPeopleView() {
+    const container = document.getElementById('peopleList');
+    const persons = getAllPersons();
+    
+    if (persons.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <span class="material-icons">people_outline</span>
+                <h3>No people yet</h3>
+                <p>Start by adding loans to see person-wise summaries</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = persons.map(person => `
+        <div class="person-detail-card">
+            <div class="person-detail-header">
+                <div class="person-summary-name">
+                    <div class="person-summary-avatar" style="width: 56px; height: 56px; font-size: 22px;">${getInitials(person.name)}</div>
+                    <div class="person-summary-info">
+                        <h3 style="font-size: 20px;">${person.name}</h3>
+                        <p>${person.loanCount} total loan${person.loanCount !== 1 ? 's' : ''} • ${person.activeLoans} active</p>
+                    </div>
+                </div>
+                <span class="person-net-position ${person.netPosition}" style="padding: 10px 20px; font-size: 14px;">
+                    ${person.netPosition === 'owes-you' ? '↑ Owes You' : person.netPosition === 'you-owe' ? '↓ You Owe' : '• Settled'}
+                </span>
+            </div>
+            
+            <div class="person-summary-body" style="margin-bottom: 20px;">
+                <div class="person-summary-stat">
+                    <div class="person-summary-stat-label">Total Lent</div>
+                    <div class="person-summary-stat-value">${formatCurrency(person.totalLent)}</div>
+                </div>
+                <div class="person-summary-stat">
+                    <div class="person-summary-stat-label">Total Borrowed</div>
+                    <div class="person-summary-stat-value">${formatCurrency(person.totalBorrowed)}</div>
+                </div>
+                ${person.outstandingLent > 0 ? `
+                    <div class="person-summary-stat">
+                        <div class="person-summary-stat-label">They Owe</div>
+                        <div class="person-summary-stat-value" style="color: var(--color-success);">${formatCurrency(person.outstandingLent)}</div>
+                    </div>
+                ` : ''}
+                ${person.outstandingBorrowed > 0 ? `
+                    <div class="person-summary-stat">
+                        <div class="person-summary-stat-label">You Owe</div>
+                        <div class="person-summary-stat-value" style="color: var(--color-error);">${formatCurrency(person.outstandingBorrowed)}</div>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <h4 style="margin-bottom: 12px; font-size: 16px;">All Loans</h4>
+            <div class="person-loans-list">
+                ${person.loans.map(loan => {
+                    const outstanding = calculateCurrentOutstanding(loan);
+                    return `
+                        <div class="person-loan-item" onclick="showLoanDetails('${loan.id}')">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <span class="loan-type-badge ${loan.type}" style="margin-right: 8px;">${loan.type}</span>
+                                    <span style="font-weight: 500;">${formatCurrency(loan.amount)}</span>
+                                    <span style="color: var(--color-text-secondary); font-size: 12px; margin-left: 8px;">
+                                        ${loan.interestType === 'compound' ? 'Compound' : 'Simple'} @ ${loan.interestRate}%
+                                    </span>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-weight: 600; color: ${loan.status === 'active' ? 'var(--color-success)' : 'var(--color-info)'};">
+                                        ${loan.status === 'active' ? formatCurrency(outstanding.outstanding) : 'Completed'}
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--color-text-secondary);">
+                                        ${formatDate(loan.startDate)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `).join('');
 }
 
 // Render Recent Loans
@@ -203,9 +493,10 @@ function renderAllLoans() {
 
 // Create Loan Card HTML
 function createLoanCard(loan) {
-    const totalAmount = calculateTotalAmount(loan);
-    const remainingAmount = calculateRemainingAmount(loan);
-    const interest = totalAmount - loan.amount;
+    const outstanding = calculateCurrentOutstanding(loan);
+    const daysElapsed = getDaysElapsed(loan.startDate, todayDate);
+    const daysRemaining = getDaysRemaining(loan);
+    const isOverdue = daysRemaining < 0 && loan.status === 'active';
     
     return `
         <div class="loan-card" onclick="showLoanDetails('${loan.id}')">
@@ -214,41 +505,54 @@ function createLoanCard(loan) {
                     <div class="loan-avatar">${getInitials(loan.personName)}</div>
                     <div class="loan-person-info">
                         <h3>${loan.personName}</h3>
-                        <p>${formatDate(loan.startDate)}</p>
+                        <p>${formatDate(loan.startDate)} • ${daysElapsed} days ago</p>
                     </div>
                 </div>
                 <span class="loan-type-badge ${loan.type}">${loan.type}</span>
             </div>
+            
+            ${loan.status === 'active' ? `
+                <div class="loan-outstanding">
+                    <div class="loan-outstanding-label">Current Outstanding</div>
+                    <div class="loan-outstanding-value">${formatCurrency(outstanding.outstanding)}</div>
+                    <div class="loan-outstanding-date">as of ${formatDate(todayDate.toISOString().split('T')[0])}</div>
+                </div>
+            ` : ''}
+            
             <div class="loan-card-body">
                 <div class="loan-detail">
                     <span class="loan-detail-label">Principal</span>
-                    <span class="loan-detail-value">${formatCurrency(loan.amount)}</span>
+                    <span class="loan-detail-value">${formatCurrency(outstanding.principal)}</span>
                 </div>
                 <div class="loan-detail">
-                    <span class="loan-detail-label">Interest</span>
-                    <span class="loan-detail-value">${formatCurrency(interest)}</span>
+                    <span class="loan-detail-label">Interest Accrued</span>
+                    <span class="loan-detail-value">${formatCurrency(outstanding.interest)}</span>
                 </div>
                 <div class="loan-detail">
-                    <span class="loan-detail-label">Total Amount</span>
-                    <span class="loan-detail-value">${formatCurrency(totalAmount)}</span>
+                    <span class="loan-detail-label">Total Repayments</span>
+                    <span class="loan-detail-value">${formatCurrency(outstanding.payments)}</span>
                 </div>
                 <div class="loan-detail">
-                    <span class="loan-detail-label">Remaining</span>
-                    <span class="loan-detail-value">${formatCurrency(remainingAmount)}</span>
+                    <span class="loan-detail-label">${isOverdue ? 'Overdue' : daysRemaining > 0 ? 'Days Remaining' : 'Status'}</span>
+                    <span class="loan-detail-value" style="color: ${isOverdue ? 'var(--color-error)' : 'var(--color-text)'}">
+                        ${isOverdue ? Math.abs(daysRemaining) + ' days' : daysRemaining > 0 ? daysRemaining + ' days' : 'Due'}
+                    </span>
                 </div>
             </div>
             <div class="loan-card-footer">
-                <span class="loan-status ${loan.status}">
+                <span class="loan-status ${isOverdue ? 'overdue' : loan.status}">
                     <span class="material-icons" style="font-size: 16px;">
-                        ${loan.status === 'active' ? 'schedule' : 'check_circle'}
+                        ${isOverdue ? 'warning' : loan.status === 'active' ? 'schedule' : 'check_circle'}
                     </span>
-                    ${loan.status}
+                    ${isOverdue ? 'overdue' : loan.status}
                 </span>
                 <div class="loan-actions" onclick="event.stopPropagation();">
-                    <button class="loan-action-btn" onclick="showPaymentModal('${loan.id}')">
-                        <span class="material-icons">payment</span>
-                        Pay
-                    </button>
+                    ${loan.status === 'active' ? `
+                        <button class="loan-action-btn" onclick="showPaymentModal('${loan.id}')">
+                            <span class="material-icons">payment</span>
+                            Pay
+                        </button>
+                    ` : ''}
                     <button class="loan-action-btn" onclick="editLoan('${loan.id}')">
                         <span class="material-icons">edit</span>
                         Edit
@@ -288,6 +592,7 @@ function editLoan(loanId) {
     document.getElementById('amount').value = loan.amount;
     document.getElementById('loanType').value = loan.type;
     document.getElementById('interestType').value = loan.interestType;
+    document.getElementById('compoundFrequency').value = loan.compoundFrequency || 'monthly';
     document.getElementById('interestRate').value = loan.interestRate;
     document.getElementById('startDate').value = loan.startDate;
     document.getElementById('durationMonths').value = loan.durationMonths;
@@ -311,6 +616,7 @@ function saveLoan() {
         amount: parseFloat(document.getElementById('amount').value),
         type: document.getElementById('loanType').value,
         interestType: document.getElementById('interestType').value,
+        compoundFrequency: document.getElementById('compoundFrequency').value,
         interestRate: parseFloat(document.getElementById('interestRate').value),
         startDate: document.getElementById('startDate').value,
         durationMonths: parseInt(document.getElementById('durationMonths').value),
@@ -340,6 +646,7 @@ function saveLoan() {
     
     saveToStorage();
     updateDashboard();
+    renderPerPersonSummary();
     renderRecentLoans();
     renderAllLoans();
     closeLoanModal();
@@ -350,7 +657,15 @@ function updateInterestInfo() {
     const rate = parseFloat(document.getElementById('interestRate').value) || 0;
     const months = parseInt(document.getElementById('durationMonths').value) || 0;
     const type = document.getElementById('interestType').value;
-    const frequency = document.getElementById('paymentFrequency').value;
+    const compoundFreq = document.getElementById('compoundFrequency').value;
+    
+    // Show/hide compound frequency based on interest type
+    const compoundFreqGroup = document.getElementById('compoundFrequencyGroup');
+    if (type === 'compound') {
+        compoundFreqGroup.style.display = 'block';
+    } else {
+        compoundFreqGroup.style.display = 'none';
+    }
     
     if (amount && rate && months) {
         let interest = 0;
@@ -360,17 +675,19 @@ function updateInterestInfo() {
             interest = calculateSimpleInterest(amount, rate, months);
             formula = `Simple Interest: SI = (P × R × T) / 100<br>SI = (${formatCurrency(amount)} × ${rate}% × ${(months/12).toFixed(2)} years) / 100`;
         } else {
-            interest = calculateCompoundInterest(amount, rate, months, frequency);
+            interest = calculateCompoundInterest(amount, rate, months, compoundFreq);
             const years = (months / 12).toFixed(2);
-            let n = frequency === 'monthly' ? 12 : frequency === 'quarterly' ? 4 : 1;
-            formula = `Compound Interest (${frequency}): CI = P × (1 + R/${n*100})^(${n}×T) - P<br>CI = ${formatCurrency(amount)} × (1 + ${rate}/${n*100})^(${n}×${years}) - ${formatCurrency(amount)}`;
+            const n = getCompoundFrequencyValue(compoundFreq);
+            const freqName = getCompoundFrequencyName(compoundFreq);
+            formula = `Compound Interest (${freqName}): A = P × (1 + r/n)^(n×t)<br>A = ${formatCurrency(amount)} × (1 + ${rate/100}/€{n})^(${n}×${years})`;
         }
         
         const total = amount + interest;
         const previewText = `
             ${formula}<br><br>
-            <strong>Interest Amount:</strong> ${formatCurrency(interest)}<br>
-            <strong>Total Repayment:</strong> ${formatCurrency(total)}
+            <strong>Interest Amount at Maturity:</strong> ${formatCurrency(interest)}<br>
+            <strong>Total Repayment:</strong> ${formatCurrency(total)}<br>
+            <small style="color: var(--color-text-secondary);">Based on ${months} months duration</small>
         `;
         
         document.getElementById('previewText').innerHTML = previewText;
@@ -382,10 +699,13 @@ function showLoanDetails(loanId) {
     const loan = loans.find(l => l.id === loanId);
     if (!loan) return;
     
+    const outstanding = calculateCurrentOutstanding(loan);
     const totalAmount = calculateTotalAmount(loan);
-    const remainingAmount = calculateRemainingAmount(loan);
-    const interest = totalAmount - loan.amount;
-    const paidAmount = loan.paymentsMade.reduce((sum, p) => sum + p.amount, 0);
+    const daysElapsed = getDaysElapsed(loan.startDate, todayDate);
+    const daysRemaining = getDaysRemaining(loan);
+    const maturityDate = getMaturityDate(loan);
+    const isOverdue = daysRemaining < 0 && loan.status === 'active';
+    const progress = Math.min(100, (daysElapsed / (daysElapsed + Math.max(0, daysRemaining))) * 100);
     
     const content = `
         <div class="loan-details">
@@ -398,43 +718,87 @@ function showLoanDetails(loanId) {
                 </div>
             </div>
             
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px;">
-                <div class="stat-item">
-                    <p class="stat-label">Principal Amount</p>
-                    <p class="stat-value">${formatCurrency(loan.amount)}</p>
+            ${loan.status === 'active' ? `
+                <div class="loan-outstanding" style="margin-bottom: 20px;">
+                    <div class="loan-outstanding-label">Current Outstanding</div>
+                    <div class="loan-outstanding-value">${formatCurrency(outstanding.outstanding)}</div>
+                    <div class="loan-outstanding-date">as of ${formatDate(todayDate.toISOString().split('T')[0])}</div>
                 </div>
-                <div class="stat-item">
-                    <p class="stat-label">Interest</p>
-                    <p class="stat-value">${formatCurrency(interest)}</p>
+            ` : ''}
+            
+            <div class="interest-breakdown">
+                <h4>Amount Breakdown</h4>
+                <div class="interest-breakdown-row">
+                    <span>Original Principal:</span>
+                    <span>${formatCurrency(outstanding.principal)}</span>
                 </div>
-                <div class="stat-item">
-                    <p class="stat-label">Total Amount</p>
-                    <p class="stat-value">${formatCurrency(totalAmount)}</p>
+                <div class="interest-breakdown-row">
+                    <span>Interest Accrued (to date):</span>
+                    <span>${formatCurrency(outstanding.interest)}</span>
                 </div>
-                <div class="stat-item">
-                    <p class="stat-label">Remaining</p>
-                    <p class="stat-value">${formatCurrency(remainingAmount)}</p>
+                <div class="interest-breakdown-row">
+                    <span>Total Repayments:</span>
+                    <span>${formatCurrency(outstanding.payments)}</span>
+                </div>
+                <div class="interest-breakdown-row">
+                    <span>Current Outstanding:</span>
+                    <span style="font-size: 18px;">${formatCurrency(outstanding.outstanding)}</span>
                 </div>
             </div>
             
-            <div style="margin-bottom: 16px;">
+            ${loan.status === 'active' ? `
+                <div class="days-counter">
+                    <div class="days-counter-item">
+                        <span class="days-counter-value">${daysElapsed}</span>
+                        <span class="days-counter-label">Days Elapsed</span>
+                    </div>
+                    <div class="days-counter-item">
+                        <span class="days-counter-value" style="color: ${isOverdue ? 'var(--color-error)' : 'var(--color-text)'}">
+                            ${isOverdue ? Math.abs(daysRemaining) : daysRemaining}
+                        </span>
+                        <span class="days-counter-label">${isOverdue ? 'Days Overdue' : 'Days Remaining'}</span>
+                    </div>
+                </div>
+                
+                <div class="loan-progress">
+                    <div class="loan-progress-bar">
+                        <div class="loan-progress-fill" style="width: ${progress}%;"></div>
+                    </div>
+                    <div class="loan-progress-label">
+                        <span>${formatDate(loan.startDate)}</span>
+                        <span>${formatDate(maturityDate.toISOString().split('T')[0])}</span>
+                    </div>
+                </div>
+            ` : ''}
+            
+            <div style="margin-bottom: 16px; margin-top: 20px;">
                 <h4 style="margin-bottom: 12px;">Loan Details</h4>
                 <div style="display: grid; gap: 8px;">
                     <div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--color-text-secondary);">Interest Type:</span>
-                        <span style="font-weight: 500;">${loan.interestType === 'simple' ? 'Simple' : 'Compound'} (${loan.interestRate}%)</span>
+                        <span style="font-weight: 500;">${loan.interestType === 'simple' ? 'Simple' : 'Compound'} @ ${loan.interestRate}%</span>
                     </div>
+                    ${loan.interestType === 'compound' ? `
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: var(--color-text-secondary);">Compound Frequency:</span>
+                            <span style="font-weight: 500;">${getCompoundFrequencyName(loan.compoundFrequency || 'monthly')}</span>
+                        </div>
+                    ` : ''}
                     <div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--color-text-secondary);">Start Date:</span>
                         <span style="font-weight: 500;">${formatDate(loan.startDate)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--color-text-secondary);">Maturity Date:</span>
+                        <span style="font-weight: 500;">${formatDate(maturityDate.toISOString().split('T')[0])}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--color-text-secondary);">Duration:</span>
                         <span style="font-weight: 500;">${loan.durationMonths} months</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--color-text-secondary);">Payment Frequency:</span>
-                        <span style="font-weight: 500;">${loan.paymentFrequency}</span>
+                        <span style="color: var(--color-text-secondary);">Expected at Maturity:</span>
+                        <span style="font-weight: 500;">${formatCurrency(totalAmount)}</span>
                     </div>
                     ${loan.notes ? `<div style="display: flex; justify-content: space-between;">
                         <span style="color: var(--color-text-secondary);">Notes:</span>
@@ -457,7 +821,7 @@ function showLoanDetails(loanId) {
                     `).join('')}
                     <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-card-border-inner); display: flex; justify-content: space-between;">
                         <span style="font-weight: 500;">Total Paid:</span>
-                        <span style="font-weight: 700; font-size: 18px;">${formatCurrency(paidAmount)}</span>
+                        <span style="font-weight: 700; font-size: 18px;">${formatCurrency(outstanding.payments)}</span>
                     </div>
                 </div>
             ` : '<p style="color: var(--color-text-secondary); text-align: center; padding: 16px;">No payments recorded yet</p>'}
@@ -485,6 +849,7 @@ function deleteLoan(loanId) {
         loans = loans.filter(l => l.id !== loanId);
         saveToStorage();
         updateDashboard();
+        renderPerPersonSummary();
         renderRecentLoans();
         renderAllLoans();
         closeLoanDetailsModal();
@@ -498,6 +863,7 @@ function markAsCompleted(loanId) {
         loan.status = 'completed';
         saveToStorage();
         updateDashboard();
+        renderPerPersonSummary();
         renderRecentLoans();
         renderAllLoans();
         closeLoanDetailsModal();
@@ -507,11 +873,80 @@ function markAsCompleted(loanId) {
 
 // Payment Modal
 function showPaymentModal(loanId) {
+    const loan = loans.find(l => l.id === loanId);
+    if (!loan) return;
+    
     document.getElementById('paymentLoanId').value = loanId;
     document.getElementById('paymentAmount').value = '';
     document.getElementById('paymentNotes').value = '';
     setTodayDate();
+    
+    const outstanding = calculateCurrentOutstanding(loan);
+    const summaryBefore = `
+        <h4 style="margin-bottom: 12px;">Current Status</h4>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">Principal Amount:</span>
+            <span class="payment-summary-value">${formatCurrency(outstanding.principal)}</span>
+        </div>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">Interest Accrued (to date):</span>
+            <span class="payment-summary-value">${formatCurrency(outstanding.interest)}</span>
+        </div>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">Previous Payments:</span>
+            <span class="payment-summary-value">${formatCurrency(outstanding.payments)}</span>
+        </div>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">Outstanding Amount:</span>
+            <span class="payment-summary-value" style="color: var(--color-success); font-size: 18px;">${formatCurrency(outstanding.outstanding)}</span>
+        </div>
+    `;
+    
+    document.getElementById('paymentSummaryBefore').innerHTML = summaryBefore;
+    document.getElementById('paymentSummaryAfter').innerHTML = '';
     document.getElementById('paymentModal').classList.add('active');
+}
+
+function updatePaymentPreview() {
+    const loanId = document.getElementById('paymentLoanId').value;
+    const paymentAmount = parseFloat(document.getElementById('paymentAmount').value) || 0;
+    
+    if (!loanId || !paymentAmount) {
+        document.getElementById('paymentSummaryAfter').innerHTML = '';
+        return;
+    }
+    
+    const loan = loans.find(l => l.id === loanId);
+    if (!loan) return;
+    
+    const outstanding = calculateCurrentOutstanding(loan);
+    const newOutstanding = Math.max(0, outstanding.outstanding - paymentAmount);
+    const interestPortion = Math.min(paymentAmount, outstanding.interest);
+    const principalPortion = paymentAmount - interestPortion;
+    
+    const summaryAfter = `
+        <h4 style="margin-bottom: 12px;">After Payment</h4>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">Payment Amount:</span>
+            <span class="payment-summary-value">${formatCurrency(paymentAmount)}</span>
+        </div>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">• Interest Portion:</span>
+            <span class="payment-summary-value">${formatCurrency(interestPortion)}</span>
+        </div>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">• Principal Portion:</span>
+            <span class="payment-summary-value">${formatCurrency(principalPortion)}</span>
+        </div>
+        <div class="payment-summary-row">
+            <span class="payment-summary-label">New Outstanding:</span>
+            <span class="payment-summary-value" style="color: ${newOutstanding === 0 ? 'var(--color-info)' : 'var(--color-success)'}; font-size: 18px;">
+                ${newOutstanding === 0 ? 'PAID IN FULL' : formatCurrency(newOutstanding)}
+            </span>
+        </div>
+    `;
+    
+    document.getElementById('paymentSummaryAfter').innerHTML = summaryAfter;
 }
 
 function closePaymentModal() {
@@ -549,6 +984,7 @@ function savePayment() {
     
     saveToStorage();
     updateDashboard();
+    renderPerPersonSummary();
     renderRecentLoans();
     renderAllLoans();
     closePaymentModal();
@@ -660,6 +1096,8 @@ function switchView(viewName) {
     // Render content based on view
     if (viewName === 'stats') {
         renderStatistics();
+    } else if (viewName === 'people') {
+        renderPeopleView();
     }
 }
 
@@ -754,7 +1192,7 @@ function setupEventListeners() {
     }
     
     // Interest calculation updates
-    const calcInputs = ['amount', 'interestRate', 'durationMonths', 'interestType', 'paymentFrequency'];
+    const calcInputs = ['amount', 'interestRate', 'durationMonths', 'interestType', 'paymentFrequency', 'compoundFrequency'];
     calcInputs.forEach(id => {
         const element = document.getElementById(id);
         if (element) {

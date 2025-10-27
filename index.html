@@ -25,6 +25,11 @@
         <main class="main-content" id="mainContent">
             <!-- Dashboard View -->
             <section id="dashboardView" class="view active">
+                <div class="dashboard-date">
+                    <span class="material-icons">today</span>
+                    <span id="currentDate"></span>
+                </div>
+
                 <div class="summary-cards">
                     <div class="summary-card" style="background: var(--color-bg-1);">
                         <div class="summary-icon">
@@ -62,6 +67,11 @@
                             <h2 class="summary-value" id="activeLoans">0</h2>
                         </div>
                     </div>
+                </div>
+
+                <div class="per-person-summary">
+                    <h3 class="section-title">Per Person Summary</h3>
+                    <div id="perPersonList" class="person-summary-list"></div>
                 </div>
 
                 <div class="quick-actions">
@@ -103,6 +113,14 @@
                     </div>
                 </div>
                 <div id="allLoansList" class="loans-list"></div>
+            </section>
+
+            <!-- People View -->
+            <section id="peopleView" class="view">
+                <div class="view-header">
+                    <h2 class="view-title">People</h2>
+                </div>
+                <div id="peopleList" class="people-list"></div>
             </section>
 
             <!-- Statistics View -->
@@ -183,6 +201,10 @@
                 <span class="material-icons">list</span>
                 <span class="nav-label">Loans</span>
             </button>
+            <button class="nav-item" data-view="people" onclick="switchView('people')">
+                <span class="material-icons">people</span>
+                <span class="nav-label">People</span>
+            </button>
             <button class="nav-item" data-view="stats" onclick="switchView('stats')">
                 <span class="material-icons">bar_chart</span>
                 <span class="nav-label">Stats</span>
@@ -239,6 +261,17 @@
                 <div class="form-group">
                     <label class="form-label" for="interestRate">Interest Rate (% per annum) *</label>
                     <input type="number" id="interestRate" class="form-control" min="0" step="0.1" value="10" required>
+                </div>
+                <div class="form-group" id="compoundFrequencyGroup" style="display: none;">
+                    <label class="form-label" for="compoundFrequency">Compound Frequency *</label>
+                    <select id="compoundFrequency" class="form-control">
+                        <option value="daily">Daily (365 times per year)</option>
+                        <option value="weekly">Weekly (52 times per year)</option>
+                        <option value="monthly" selected>Monthly (12 times per year)</option>
+                        <option value="quarterly">Quarterly (4 times per year)</option>
+                        <option value="annually">Annually (1 time per year)</option>
+                    </select>
+                    <small style="color: var(--color-text-secondary); margin-top: 4px; display: block;">How often interest is calculated and added to principal</small>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="startDate">Start Date *</label>
@@ -297,9 +330,10 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="paymentLoanId">
+                <div id="paymentSummaryBefore" class="payment-summary"></div>
                 <div class="form-group">
                     <label class="form-label" for="paymentAmount">Payment Amount (₹) *</label>
-                    <input type="number" id="paymentAmount" class="form-control" min="1" step="1" required>
+                    <input type="number" id="paymentAmount" class="form-control" min="1" step="1" required oninput="updatePaymentPreview()">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="paymentDate">Payment Date *</label>
@@ -309,6 +343,7 @@
                     <label class="form-label" for="paymentNotes">Notes</label>
                     <input type="text" id="paymentNotes" class="form-control" placeholder="Optional notes">
                 </div>
+                <div id="paymentSummaryAfter" class="payment-summary"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn--secondary" onclick="closePaymentModal()">Cancel</button>
