@@ -1354,6 +1354,22 @@ body {
   background-color: var(--color-secondary);
 }
 
+.btn--error {
+  background-color: var(--color-error);
+  color: var(--color-white);
+}
+
+.btn--error:hover {
+  background-color: var(--color-red-500);
+  opacity: 0.9;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn--error:active {
+  transform: translateY(0);
+}
+
 /* Card Component */
 .card {
   background-color: var(--color-surface);

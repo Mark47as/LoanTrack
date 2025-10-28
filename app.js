@@ -10,7 +10,8 @@ let todayDate = new Date();
 // Initialize app
 function initApp() {
     todayDate = new Date();
-    loadFromStorage();
+    // Start with empty loans array - no sample data
+    // Data persists in memory during the session only
     applyTheme();
     setCurrentDate();
     updateDashboard();
@@ -35,62 +36,12 @@ function setCurrentDate() {
 }
 
 // In-Memory Storage Management
-function loadFromStorage() {
-    // Load sample data on first load
-    if (loans.length === 0) {
-        loans = getSampleData();
-    }
-}
-
+// NOTE: Data is stored in memory only and will be lost on page refresh
+// This is intentional - no localStorage/sessionStorage due to sandbox restrictions
 function saveToStorage() {
-    // Data persists in memory during session
-    // In a real app, this would save to a backend
-}
-
-function getSampleData() {
-    return [
-        {
-            id: generateId(),
-            personName: 'Rahul Kumar',
-            contactInfo: '+91 98765 43210',
-            amount: 50000,
-            type: 'lent',
-            interestType: 'compound',
-            compoundFrequency: 'monthly',
-            interestRate: 12,
-            startDate: '2024-01-15',
-            durationMonths: 24,
-            paymentFrequency: 'monthly',
-            notes: 'Business loan',
-            status: 'active',
-            paymentsMade: [
-                {
-                    amount: 10000,
-                    date: '2024-07-15',
-                    notes: 'First payment',
-                    timestamp: new Date('2024-07-15').toISOString()
-                }
-            ],
-            createdAt: new Date('2024-01-15').toISOString()
-        },
-        {
-            id: generateId(),
-            personName: 'Priya Sharma',
-            contactInfo: 'priya.sharma@email.com',
-            amount: 25000,
-            type: 'borrowed',
-            interestType: 'simple',
-            compoundFrequency: 'monthly',
-            interestRate: 8,
-            startDate: '2024-03-01',
-            durationMonths: 12,
-            paymentFrequency: 'monthly',
-            notes: 'Personal loan',
-            status: 'active',
-            paymentsMade: [],
-            createdAt: new Date('2024-03-01').toISOString()
-        }
-    ];
+    // Data persists in memory during session only
+    // In a production app, this would save to a backend API
+    console.log('Data saved to memory. Loans count:', loans.length);
 }
 
 // Utility Functions
@@ -312,7 +263,13 @@ function renderPerPersonSummary() {
     const persons = getAllPersons();
     
     if (persons.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: var(--color-text-secondary); padding: 20px;">No loans yet</p>';
+        container.innerHTML = `
+            <div class="empty-state">
+                <span class="material-icons">people_outline</span>
+                <h3>No People Yet</h3>
+                <p>Add loans to see person-wise summaries</p>
+            </div>
+        `;
         return;
     }
     
@@ -361,8 +318,12 @@ function renderPeopleView() {
         container.innerHTML = `
             <div class="empty-state">
                 <span class="material-icons">people_outline</span>
-                <h3>No people yet</h3>
-                <p>Start by adding loans to see person-wise summaries</p>
+                <h3>No People Found</h3>
+                <p>Add a loan to get started and track people</p>
+                <button class="btn btn--primary" onclick="showLoanModal('lent')" style="margin-top: 16px;">
+                    <span class="material-icons">add</span>
+                    Add Loan
+                </button>
             </div>
         `;
         return;
@@ -448,9 +409,13 @@ function renderRecentLoans() {
     if (recentLoans.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <span class="material-icons">inbox</span>
-                <h3>No loans yet</h3>
-                <p>Start by adding a new loan using the button above</p>
+                <span class="material-icons">account_balance_wallet</span>
+                <h3>No Loans Yet</h3>
+                <p>Start tracking your lending by adding your first loan</p>
+                <button class="btn btn--primary" onclick="showLoanModal('lent')" style="margin-top: 16px;">
+                    <span class="material-icons">add</span>
+                    Add Your First Loan
+                </button>
             </div>
         `;
         return;
@@ -477,11 +442,26 @@ function renderAllLoans() {
         return matchesSearch && matchesFilter;
     });
     
+    if (loans.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <span class="material-icons">receipt_long</span>
+                <h3>Your Loan List is Empty</h3>
+                <p>Create your first loan to start tracking</p>
+                <button class="btn btn--primary" onclick="showLoanModal('lent')" style="margin-top: 16px;">
+                    <span class="material-icons">add</span>
+                    Add Loan
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
     if (filteredLoans.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
                 <span class="material-icons">search_off</span>
-                <h3>No loans found</h3>
+                <h3>No Loans Found</h3>
                 <p>Try adjusting your search or filter</p>
             </div>
         `;
@@ -556,6 +536,10 @@ function createLoanCard(loan) {
                     <button class="loan-action-btn" onclick="editLoan('${loan.id}')">
                         <span class="material-icons">edit</span>
                         Edit
+                    </button>
+                    <button class="loan-action-btn" onclick="deleteLoan('${loan.id}')" style="color: var(--color-error);">
+                        <span class="material-icons">delete</span>
+                        Delete
                     </button>
                 </div>
             </div>
@@ -831,9 +815,13 @@ function showLoanDetails(loanId) {
     document.getElementById('loanDetailsContent').innerHTML = content;
     
     const actions = `
-        <button class="btn btn--secondary" onclick="deleteLoan('${loan.id}')">Delete Loan</button>
-        ${loan.status === 'active' ? `<button class="btn btn--primary" onclick="markAsCompleted('${loan.id}')">Mark as Completed</button>` : ''}
-        <button class="btn btn--secondary" onclick="closeLoanDetailsModal()">Close</button>
+        <button class="btn btn--outline" onclick="closeLoanDetailsModal()">Close</button>
+        ${loan.status === 'active' ? `<button class="btn btn--primary" onclick="showPaymentModal('${loan.id}'); closeLoanDetailsModal();">Record Payment</button>` : ''}
+        ${loan.status === 'active' ? `<button class="btn btn--secondary" onclick="markAsCompleted('${loan.id}')">Mark as Completed</button>` : ''}
+        <button class="btn btn--error" onclick="deleteLoan('${loan.id}')" style="background-color: var(--color-error); color: white;">
+            <span class="material-icons">delete</span>
+            Delete Loan
+        </button>
     `;
     
     document.getElementById('loanDetailsActions').innerHTML = actions;
@@ -845,14 +833,35 @@ function closeLoanDetailsModal() {
 }
 
 function deleteLoan(loanId) {
-    if (confirm('Are you sure you want to delete this loan? This action cannot be undone.')) {
+    // Find the loan first
+    const loan = loans.find(l => l.id === loanId);
+    if (!loan) {
+        showToast('Loan not found', 'error');
+        return;
+    }
+    
+    // Show confirmation dialog with person name
+    const confirmed = confirm(`Are you sure you want to delete the loan for ${loan.personName}? This action cannot be undone.`);
+    
+    if (confirmed) {
+        // Remove from array
         loans = loans.filter(l => l.id !== loanId);
+        
+        // Save to storage
         saveToStorage();
+        
+        // Close any open modals
+        closeLoanDetailsModal();
+        closePaymentModal();
+        
+        // Refresh all views
         updateDashboard();
         renderPerPersonSummary();
         renderRecentLoans();
         renderAllLoans();
-        closeLoanDetailsModal();
+        renderPeopleView();
+        
+        // Show success message
         showToast('Loan deleted successfully');
     }
 }
@@ -1157,8 +1166,10 @@ function clearAllData() {
         loans = [];
         saveToStorage();
         updateDashboard();
+        renderPerPersonSummary();
         renderRecentLoans();
         renderAllLoans();
+        renderPeopleView();
         showToast('All data cleared');
     }
 }
